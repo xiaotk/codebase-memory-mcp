@@ -1402,12 +1402,14 @@ static CBMLanguage extract_lang_from_source(const char *src, uint32_t src_len) {
                 strncmp(src + i, "LANG=", 5) == 0) {
                 /* Found lang=, now check the value */
                 uint32_t val_start = i + 5;
-                if (val_start >= src_len) continue;
+                if (val_start >= src_len)
+                    continue;
 
                 char quote = src[val_start];
                 if (quote == '"' || quote == '\'') {
                     val_start++;
-                    if (val_start >= src_len) continue;
+                    if (val_start >= src_len)
+                        continue;
 
                     /* Check for ts/Typescript values */
                     if (src[val_start] == 't' || src[val_start] == 'T') {
@@ -1427,8 +1429,8 @@ static CBMLanguage extract_lang_from_source(const char *src, uint32_t src_len) {
 }
 
 static void embedded_collect_content_nodes(TSNode root, const CBMEmbeddedLangSpec *spec,
-                                           EmbedContentWithLang *out, int *out_count,
-                                           int max_out, const char *source) {
+                                           EmbedContentWithLang *out, int *out_count, int max_out,
+                                           const char *source) {
     /* Iterative DFS so deeply-nested script blocks are still found.  Cap the
      * stack to a sane bound (host grammars do not have million-deep markup
      * trees) — no need to introduce TSNodeStack here. */
@@ -1445,8 +1447,8 @@ static void embedded_collect_content_nodes(TSNode root, const CBMEmbeddedLangSpe
             if (source != NULL) {
                 uint32_t node_start = ts_node_start_byte(node);
                 uint32_t node_end = ts_node_end_byte(node);
-                detected_lang = extract_lang_from_source(source + node_start,
-                                                          node_end - node_start);
+                detected_lang = extract_lang_from_source(source + node_start, node_end -
+                                                                     node_start);
             }
 
             uint32_t cc = ts_node_child_count(node);
@@ -1481,7 +1483,8 @@ static void parse_embedded_imports(CBMExtractCtx *ctx) {
         enum { MAX_EMBEDDED_BLOCKS = 16 };
         EmbedContentWithLang hits[MAX_EMBEDDED_BLOCKS];
         int hit_count = 0;
-        embedded_collect_content_nodes(ctx->root, e, hits, &hit_count, MAX_EMBEDDED_BLOCKS, ctx->source);
+        embedded_collect_content_nodes(ctx->root, e, hits, &hit_count, MAX_EMBEDDED_BLOCKS,
+                                         ctx->source);
         if (hit_count == 0) {
             continue;
         }
