@@ -14,7 +14,7 @@ on:
         default: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -76,3 +76,38 @@ jobs:
         with:
           name: windows-binaries
           path: "*.zip"
+
+      - name: Generate checksums
+        shell: msys2 {0}
+        run: |
+          sha256sum *.zip > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: Windows Build ${{ inputs.version }}
+          draft: false
+          prerelease: true
+          files: |
+            *.zip
+            checksums.txt
+          body: |
+            ## Windows Binaries - ${{ inputs.version }}
+
+            Quick Windows-only build (no tests, no checks).
+
+            ### Files:
+            - `codebase-memory-mcp-windows-amd64.zip` - Standard binary
+            - `codebase-memory-mcp-ui-windows-amd64.zip` - UI variant (if built)
+            - `checksums.txt` - SHA256 checksums
+
+            ### Installation:
+            ```powershell
+            # Extract and run
+            unzip codebase-memory-mcp-windows-amd64.zip
+            .\install.ps1
+            ```
+
+            ---
+            **Note:** This is a quick test build. For production use, see [official releases](https://github.com/DeusData/codebase-memory-mcp/releases/latest).
