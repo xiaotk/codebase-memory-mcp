@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "7d6cdb23ef5ca2fd51f5d5b7509b33e112ef15f3",
+    "indexed_at": "2026-07-29T15:29:51Z",
+    "project": "codebase-memory-mcp",
+    "nodes": 17344,
+    "edges": 100335,
+    "original_size": 54067200,
+    "compressed_size": 10948545,
+    "compression_level": 9
+}

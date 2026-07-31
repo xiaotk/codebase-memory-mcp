@@ -52,7 +52,8 @@ CFLAGS_COMMON = -std=c11 -D_DEFAULT_SOURCE -D_GNU_SOURCE -Wall -Wextra -Werror \
 
 CXXFLAGS_COMMON = -std=c++14 -Wall -Wextra -Werror \
                   -Wno-unused-parameter \
-                  -I$(CBM_DIR) -I$(TS_INCLUDE)
+                  -I$(CBM_DIR) -I$(TS_INCLUDE) \
+                  -I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1
 
 # Production flags (CFLAGS_EXTRA allows CI to inject -DCBM_VERSION)
 # CBM_BIND_TS_ALLOCATOR=1: bind the tree-sitter runtime to mimalloc (#424). Only

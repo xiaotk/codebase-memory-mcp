@@ -1384,8 +1384,51 @@ static void parse_spec_imports(CBMExtractCtx *ctx) {
 // that the main parser uses.  Adding another host language is a one-line
 // declaration in lang_specs.c.
 
+/* Structure to hold a content node along with its detected language */
+typedef struct {
+    TSNode content_node;
+    CBMLanguage lang;
+} EmbedContentWithLang;
+
+/* Extract lang attribute value from a script element's source.
+ * src points to the start of the script_element in source code.
+ * Returns CBM_LANG_TYPESCRIPT for lang="ts"/"typescript", CBM_LANG_JAVASCRIPT otherwise.
+ */
+static CBMLanguage extract_lang_from_source(const char *src, uint32_t src_len) {
+    /* Simple string search for lang="ts" or lang='ts' patterns */
+    for (uint32_t i = 0; i < src_len - 8; i++) { /* minimum: lang="ts" */
+        if (src[i] == 'l' || src[i] == 'L') {
+            if (strncmp(src + i, "lang=", 5) == 0 ||
+                strncmp(src + i, "LANG=", 5) == 0) {
+                /* Found lang=, now check the value */
+                uint32_t val_start = i + 5;
+                if (val_start >= src_len) continue;
+
+                char quote = src[val_start];
+                if (quote == '"' || quote == '\'') {
+                    val_start++;
+                    if (val_start >= src_len) continue;
+
+                    /* Check for ts/Typescript values */
+                    if (src[val_start] == 't' || src[val_start] == 'T') {
+                        if (strncmp(src + val_start, "ts", 2) == 0 ||
+                            strncmp(src + val_start, "TS", 2) == 0 ||
+                            strncmp(src + val_start, "typescript", 10) == 0 ||
+                            strncmp(src + val_start, "Typescript", 10) == 0 ||
+                            strncmp(src + val_start, "TypeScript", 10) == 0) {
+                            return CBM_LANG_TYPESCRIPT;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return CBM_LANG_JAVASCRIPT; /* Default to JavaScript */
+}
+
 static void embedded_collect_content_nodes(TSNode root, const CBMEmbeddedLangSpec *spec,
-                                           TSNode *out, int *out_count, int max_out) {
+                                           EmbedContentWithLang *out, int *out_count,
+                                           int max_out, const char *source) {
     /* Iterative DFS so deeply-nested script blocks are still found.  Cap the
      * stack to a sane bound (host grammars do not have million-deep markup
      * trees) — no need to introduce TSNodeStack here. */
@@ -1397,11 +1440,22 @@ static void embedded_collect_content_nodes(TSNode root, const CBMEmbeddedLangSpe
         TSNode node = stack[--top];
         const char *kind = ts_node_type(node);
         if (strcmp(kind, spec->script_node_type) == 0) {
+            /* For Vue/Svelte, detect lang from source */
+            CBMLanguage detected_lang = spec->embedded_language; /* Default */
+            if (source != NULL) {
+                uint32_t node_start = ts_node_start_byte(node);
+                uint32_t node_end = ts_node_end_byte(node);
+                detected_lang = extract_lang_from_source(source + node_start,
+                                                          node_end - node_start);
+            }
+
             uint32_t cc = ts_node_child_count(node);
             for (uint32_t k = 0; k < cc; k++) {
                 TSNode c = ts_node_child(node, k);
                 if (strcmp(ts_node_type(c), spec->content_node_type) == 0) {
-                    out[(*out_count)++] = c;
+                    out[*out_count].content_node = c;
+                    out[*out_count].lang = detected_lang;
+                    (*out_count)++;
                     if (*out_count >= max_out) {
                         return;
                     }
@@ -1424,35 +1478,39 @@ static void parse_embedded_imports(CBMExtractCtx *ctx) {
         return;
     }
     for (const CBMEmbeddedLangSpec *e = spec->embedded_imports; e->script_node_type != NULL; e++) {
-        const TSLanguage *embedded_lang = cbm_ts_language(e->embedded_language);
-        if (!embedded_lang) {
-            continue; /* embedded grammar not linked in — silently skip */
-        }
         enum { MAX_EMBEDDED_BLOCKS = 16 };
-        TSNode hits[MAX_EMBEDDED_BLOCKS];
+        EmbedContentWithLang hits[MAX_EMBEDDED_BLOCKS];
         int hit_count = 0;
-        embedded_collect_content_nodes(ctx->root, e, hits, &hit_count, MAX_EMBEDDED_BLOCKS);
+        embedded_collect_content_nodes(ctx->root, e, hits, &hit_count, MAX_EMBEDDED_BLOCKS, ctx->source);
         if (hit_count == 0) {
             continue;
         }
-        TSParser *parser = ts_parser_new();
-        if (!parser) {
-            continue;
-        }
-        if (!ts_parser_set_language(parser, embedded_lang)) {
-            ts_parser_delete(parser);
-            continue;
-        }
         for (int i = 0; i < hit_count; i++) {
-            uint32_t s = ts_node_start_byte(hits[i]);
-            uint32_t end = ts_node_end_byte(hits[i]);
+            /* Get the language for this specific script block */
+            const TSLanguage *embedded_lang = cbm_ts_language(hits[i].lang);
+            if (!embedded_lang) {
+                continue; /* embedded grammar not linked in — silently skip */
+            }
+            TSParser *parser = ts_parser_new();
+            if (!parser) {
+                continue;
+            }
+            if (!ts_parser_set_language(parser, embedded_lang)) {
+                ts_parser_delete(parser);
+                continue;
+            }
+            TSNode content_node = hits[i].content_node;
+            uint32_t s = ts_node_start_byte(content_node);
+            uint32_t end = ts_node_end_byte(content_node);
             if (end <= s) {
+                ts_parser_delete(parser);
                 continue;
             }
             const char *sub_src = ctx->source + s;
             uint32_t sub_len = end - s;
             TSTree *sub_tree = ts_parser_parse_string(parser, NULL, sub_src, sub_len);
             if (!sub_tree) {
+                ts_parser_delete(parser);
                 continue;
             }
             CBMExtractCtx sub_ctx = *ctx;
@@ -1460,8 +1518,8 @@ static void parse_embedded_imports(CBMExtractCtx *ctx) {
             sub_ctx.root = ts_tree_root_node(sub_tree);
             walk_es_imports(&sub_ctx, sub_ctx.root);
             ts_tree_delete(sub_tree);
+            ts_parser_delete(parser);
         }
-        ts_parser_delete(parser);
     }
 }
 

@@ -2384,6 +2384,43 @@ TEST(vue_imports_basic) {
     PASS();
 }
 
+TEST(vue_imports_typescript) {
+    /* Vue SFC with TypeScript script: should detect lang='ts' and use TS parser */
+    CBMFileResult *r = extract("<template><div>{{ msg }}</div></template>\n"
+                               "<script setup lang=\"ts\">\n"
+                               "import { ref } from 'vue';\n"
+                               "import MyComp from './MyComp.vue';\n"
+                               "import type { Ref } from 'vue';\n"
+                               "const msg: Ref<string> = ref('hello');\n"
+                               "</script>\n",
+                               CBM_LANG_VUE, "t", "Component.vue");
+    ASSERT_NOT_NULL(r);
+    ASSERT_FALSE(r->has_error);
+    /* TypeScript should parse type imports and standard imports */
+    ASSERT_GTE(r->imports.count, 2);
+    ASSERT(has_import(r, "vue"));
+    ASSERT(has_import(r, "MyComp.vue"));
+    cbm_free_result(r);
+    PASS();
+}
+
+TEST(vue_imports_typescript_single_quote) {
+    /* Vue SFC with TypeScript using single quotes for lang attribute */
+    CBMFileResult *r = extract("<template><div /></template>\n"
+                               "<script lang='ts'>\n"
+                               "import axios from 'axios';\n"
+                               "import { defineComponent } from 'vue';\n"
+                               "</script>\n",
+                               CBM_LANG_VUE, "t", "SingleQuote.vue");
+    ASSERT_NOT_NULL(r);
+    ASSERT_FALSE(r->has_error);
+    ASSERT_GTE(r->imports.count, 2);
+    ASSERT(has_import(r, "axios"));
+    ASSERT(has_import(r, "vue"));
+    cbm_free_result(r);
+    PASS();
+}
+
 TEST(html_imports_basic) {
     /* Plain HTML with inline ES module imports — same generic walker. */
     CBMFileResult *r = extract("<!DOCTYPE html><html><head>\n"
@@ -4901,6 +4938,8 @@ SUITE(extraction) {
     RUN_TEST(svelte_imports_basic);
     RUN_TEST(svelte_imports_no_script);
     RUN_TEST(vue_imports_basic);
+    RUN_TEST(vue_imports_typescript);
+    RUN_TEST(vue_imports_typescript_single_quote);
     RUN_TEST(html_imports_basic);
 
     /* config_extraction_test.go ports */
